@@ -2,20 +2,20 @@
 # the following can be used inside functions that return strings to display
 # messages on console
 echoerr() {
-  echo $@ >&2
+  echo "$@" >&2
 }
 
 read_var_from_conf() {
   VAR_NAME=$1
   files="conf/local.conf conf/site.conf"
   for conf_file in $files; do
-    if [ ! -f $conf_file ]; then
+    if [ ! -f "$conf_file" ]; then
       continue
     fi
 
-    value=$(cat $conf_file | grep "^$VAR_NAME" | awk 'BEGIN{FS="="} {print$2}' | tr -d '"' | tr -d ' ' | tail -1)
+    value=$(grep "^$VAR_NAME" <"$conf_file" | awk 'BEGIN{FS="="} {print$2}' | tr -d '"' | tr -d ' ' | tail -1)
     if [ -n "$value" ]; then
-      echo $value
+      echo "$value"
       return 0
     fi
   done
@@ -44,11 +44,11 @@ fi
 # and it will automatically set MACHINE variable
 
 arg0=$0
-test -n "$BASH" && arg0=$BASH_SOURCE[0]
+test -n "$BASH" && arg0=${BASH_SOURCE[0]}
 
 scriptname="${arg0##*/}"
 mach=${scriptname%-*}
-if [ -n "${mach}" -a "${mach}" != "${scriptname}" ]; then
+if [ -n "${mach}" ] && [ "${mach}" != "${scriptname}" ]; then
   MACHINE=${mach}
 fi
 if [ -z "${MACHINE}" ]; then
@@ -79,9 +79,10 @@ PROXYHOST=""
 ###############################################################################
 # OE_BASE    - The root directory for all OE sources and development.
 ###############################################################################
-OE_BASE=$(/bin/readlink -f $(dirname '${0}'))
+# shellcheck disable=SC2016
+OE_BASE=$(/bin/readlink -f "$(dirname '${0}')")
 
-cd $OE_BASE
+cd "$OE_BASE" || exit 1
 
 # incremement this to force recreation of config files.  This should be done
 # whenever the DISTRO, or anything major changes
@@ -91,7 +92,9 @@ YOE_ENV_FILE=localconfig.sh
 # Workaround for differences between yocto bitbake and vanilla bitbake
 export BBFETCH2=True
 
-export DISTRO_DIRNAME=$(echo $DISTRO | sed 's#[.-]#_#g')
+# shellcheck disable=SC2001
+DISTRO_DIRNAME="$(echo "$DISTRO" | sed 's#[.-]#_#g')"
+export DISTRO_DIRNAME
 export OE_DEPLOY_DIR=${OE_BASE}/build/tmp/deploy/images/${MACHINE}
 
 #--------------------------------------------------------------------------
@@ -125,11 +128,11 @@ OE_SOURCE_DIR=${OE_BASE}/sources
 
 export BUILDDIR=${OE_BUILD_DIR}
 
-mkdir -p ${OE_BUILD_DIR}
-mkdir -p ${OE_BUILD_TMPDIR}
-mkdir -p ${OE_DL_DIR}
-mkdir -p ${OE_SSTATE_DIR}
-mkdir -p ${OE_SOURCE_DIR}
+mkdir -p "${OE_BUILD_DIR}"
+mkdir -p "${OE_BUILD_TMPDIR}"
+mkdir -p "${OE_DL_DIR}"
+mkdir -p "${OE_SSTATE_DIR}"
+mkdir -p "${OE_SOURCE_DIR}"
 export OE_BASE
 
 #--------------------------------------------------------------------------
@@ -137,7 +140,8 @@ export OE_BASE
 #--------------------------------------------------------------------------
 export PATH=${OE_SOURCE_DIR}/openembedded-core/scripts:${OE_SOURCE_DIR}/bitbake/bin:${PATH}
 # remove duplicate entries from path
-export PATH="$(perl -e 'print join(":", grep { not $seen{$_}++ } split(/:/, $ENV{PATH}))')"
+PATH="$(perl -e 'print join(":", grep { not $seen{$_}++ } split(/:/, $ENV{PATH}))')"
+export PATH
 #--------------------------------------------------------------------------
 # Make sure Bitbake doesn't filter out the following variables from our
 # environment.
@@ -149,13 +153,14 @@ SDKMACHINE BB_NUMBER_THREADS BB_NO_NETWORK PARALLEL_MAKE GIT_PROXY_COMMAND \
 SOCKS5_PASSWD SOCKS5_USER SCREENDIR STAMPS_DIR BBPATH_EXTRA BB_SETSCENE_ENFORCE \
 OE_BASE IMG_VERSION BUILDHISTORY_RESET YOE_PROFILE"
 
-BB_ENV_EXTRAWHITE="$(echo $BB_ENV_EXTRAWHITE $BB_ENV_EXTRAWHITE_OE | tr ' ' '\n' | LC_ALL=C sort --unique | tr '\n' ' ')"
+BB_ENV_EXTRAWHITE="$(echo "$BB_ENV_EXTRAWHITE" "$BB_ENV_EXTRAWHITE_OE" | tr ' ' '\n' | LC_ALL=C sort --unique | tr '\n' ' ')"
 
 export BB_ENV_EXTRAWHITE
 #--------------------------------------------------------------------------
 # Specify proxy information
 #--------------------------------------------------------------------------
 if [ "x$PROXYHOST" != "x" ]; then
+  # shellcheck disable=SC2153
   export http_proxy=http://${PROXYHOST}:${PROXYPORT}/
   export ftp_proxy=http://${PROXYHOST}:${PROXYPORT}/
 
@@ -178,6 +183,7 @@ export BBPATH=${OE_BUILD_DIR}:${OE_SOURCE_DIR}/openembedded-core/meta${BBPATH_EX
 #--------------------------------------------------------------------------
 
 if [ -e ${YOE_ENV_FILE} ]; then
+  # shellcheck source=/dev/null
   . ./${YOE_ENV_FILE}
 fi
 
@@ -191,6 +197,7 @@ elif [ x"${DISTRO_DIRNAME}" != x"${SCRIPTS_DISTRO_DIRNAME}" ]; then
 fi
 
 if [ -e ${YOE_ENV_FILE} ]; then
+  # shellcheck source=/dev/null
   . ./${YOE_ENV_FILE}
 else
 
@@ -208,11 +215,11 @@ fi # if -e ${YOE_ENV_FILE}
 #--------------------------------------------------------------------------
 # Write out the OE bitbake configuration file.
 #--------------------------------------------------------------------------
-mkdir -p ${OE_BUILD_DIR}/conf
+mkdir -p "${OE_BUILD_DIR}/conf"
 
 AUTO_CONF=${OE_BUILD_DIR}/conf/auto.conf
-rm -f $AUTO_CONF
-cat >$AUTO_CONF <<_EOF
+rm -f "$AUTO_CONF"
+cat >"$AUTO_CONF" <<_EOF
 # This is an automatically generated file, please do not edit.
 
 ACONF_VERSION = "1"
@@ -238,16 +245,16 @@ echo "${AUTO_CONF} has been updated"
 ###############################################################################
 yoe_update_all() {
   CWD=$(pwd)
-  cd ${OE_BASE}
+  cd "${OE_BASE}" || return 1
   git pull && git submodule sync && git submodule update
-  cd $CWD
+  cd "$CWD" || return 1
 }
 
 yoe_update_all_submodules_to_master() {
   SAVEDPWD=$PWD
-  cd $OE_BASE
+  cd "$OE_BASE" || return 1
   git submodule foreach "git checkout master && git pull"
-  cd $SAVEDPWD
+  cd "$SAVEDPWD" || return 1
 }
 
 ###############################################################################
@@ -255,7 +262,7 @@ yoe_update_all_submodules_to_master() {
 ###############################################################################
 yoe_clean() {
   echo "Cleaning ${OE_BUILD_TMPDIR}"
-  rm -rf ${OE_BUILD_TMPDIR}
+  rm -rf "${OE_BUILD_TMPDIR}"
 }
 
 ###############################################################################
@@ -264,19 +271,19 @@ yoe_clean() {
 ###############################################################################
 yoe_setup() {
   SAVEDPWD=$PWD
-  cd $OE_BASE
+  cd "$OE_BASE" || return 1
   git submodule init
   git submodule update
-  cd $SAVEDPWD
+  cd "$SAVEDPWD" || return 1
 }
 
 ###############################################################################
 # CONFIG_SVN_PROXY() - Configure subversion proxy information
 ###############################################################################
 yoe_config_svn_proxy() {
-  if [ ! -f ${SVN_CONFIG_DIR}/servers ]; then
-    mkdir -p ${SVN_CONFIG_DIR}
-    cat >>${SVN_CONFIG_DIR}/servers <<_EOF
+  if [ ! -f "${SVN_CONFIG_DIR}/servers" ]; then
+    mkdir -p "${SVN_CONFIG_DIR}"
+    cat >>"${SVN_CONFIG_DIR}/servers" <<_EOF
 [global]
 http-proxy-host = ${PROXYHOST}
 http-proxy-port = ${PROXYPORT}
@@ -288,27 +295,27 @@ _EOF
 # CONFIG_GIT_PROXY() - Configure GIT proxy information
 ###############################################################################
 yoe_config_git_proxy() {
-  if [ ! -f ${GIT_CONFIG_DIR}/git-proxy.sh ]; then
-    mkdir -p ${GIT_CONFIG_DIR}
-    cat >${GIT_CONFIG_DIR}/git-proxy.sh <<_EOF
+  if [ ! -f "${GIT_CONFIG_DIR}/git-proxy.sh" ]; then
+    mkdir -p "${GIT_CONFIG_DIR}"
+    cat >"${GIT_CONFIG_DIR}/git-proxy.sh" <<_EOF
 if [ -x /bin/env ] ; then
     exec /bin/env corkscrew ${PROXYHOST} ${PROXYPORT} \$*
 else
     exec /usr/bin/env corkscrew ${PROXYHOST} ${PROXYPORT} \$*
 fi
 _EOF
-    chmod +x ${GIT_CONFIG_DIR}/git-proxy.sh
+    chmod +x "${GIT_CONFIG_DIR}/git-proxy.sh"
     export GIT_PROXY_COMMAND=${GIT_CONFIG_DIR}/git-proxy.sh
   fi
 }
 
 yoe_feed_server() {
   SAVEDPWD=$PWD
-  cd $OE_BASE
+  cd "$OE_BASE" || return 1
   bitbake package-index || return 1
-  cd build/tmp/deploy/ipk
+  cd build/tmp/deploy/ipk || return 1
   python3 -m http.server 8000
-  cd $SAVEDPWD
+  cd "$SAVEDPWD" || return 1
 }
 
 yoe_host_ip() {
@@ -334,34 +341,34 @@ yoe_setup_feed_server() {
   if [ -z "${HOST_IP}" ]; then
     HOST_IP=$(hostname -i | cut -d' ' -f 1)
   fi
-  ssh root@$MIP ls /etc/opkg/base-feeds.conf >/dev/null 2>&1
-  if [ $? -ne 0 ]; then
+  if ! ssh "root@$MIP" ls /etc/opkg/base-feeds.conf >/dev/null 2>&1; then
     echo "opkg is not installed, can't setup feeds on  machine $MIP"
   else
     SERVER=http://$HOST_IP:8000
     echo "pointing feeds to $SERVER"
-    ssh root@$MIP "sed -i -e 's|http://.*\/|${SERVER}/|' /etc/opkg/base-feeds.conf"
+    # shellcheck disable=SC2029
+    ssh "root@$MIP" "sed -i -e 's|http://.*\/|${SERVER}/|' /etc/opkg/base-feeds.conf"
   fi
 }
 
 yoe_search_file() {
-  if [ -z $1 ]; then
+  if [ -z "$1" ]; then
     echo "Usage: yoe_search_file filename"
     return
   fi
-  cd $OE_BASE/sources
-  find -name downloads -prune -o -name $1 -print
-  cd -
+  cd "$OE_BASE/sources" || return 1
+  find . -name downloads -prune -o -name "$1" -print
+  cd - || return 1
 }
 
 yoe_search_text() {
-  if test -z $1; then
+  if test -z "$1"; then
     echo "Usage: yoe_search_text searchtext"
     return
   fi
-  cd $OE_BASE/sources
-  find -name downloads -prune -o -type f -print | xargs grep $1
-  cd -
+  cd "$OE_BASE/sources" || return 1
+  find . -name downloads -prune -o -type f -print0 | xargs -0 grep "$1"
+  cd - || return 1
 }
 
 yoe_show_env() {
@@ -369,46 +376,46 @@ yoe_show_env() {
 }
 
 yoe_add_layer() {
-  if test -z $1; then
+  if test -z "$1"; then
     echo "Usage:  yoe_add_layer <url> [<branch>]"
     return
   fi
-  cd $OE_BASE
+  cd "$OE_BASE" || return 1
   if [ -z "$2" ]; then
     br="master"
   else
     br="$2"
   fi
-  n=$(echo $1 | awk -F "[/:]" '{ print $NF }')
+  n=$(echo "$1" | awk -F "[/:]" '{ print $NF }')
   if [[ -e sources/$n && ! -e sources/$n/.git ]]; then
     echo "'sources/$n' already exists and is not a valid git repo"
     return
   fi
-  git submodule add -b $br -f $1 sources/$n
-  git submodule init sources/$n
-  bitbake-layers add-layer sources/$n && sed -i -e "s|$OE_BASE|\${TOPDIR}|" conf/bblayers.conf
+  git submodule add -b "$br" -f "$1" "sources/$n"
+  git submodule init "sources/$n"
+  bitbake-layers add-layer "sources/$n" && sed -i -e "s|$OE_BASE|\${TOPDIR}|" conf/bblayers.conf
   echo "please commit with - git add conf/bblayers.conf && git commit -s -m'Added module $n'"
 }
 
 yoe_remove_layer() {
-  if test -z $1; then
+  if test -z "$1"; then
     echo "Usage:  yoe_remove_layer <layer-name>"
     return
   fi
-  cd $OE_BASE
+  cd "$OE_BASE" || return 1
   m=sources/$1
-  bitbake-layers remove-layer $1
-  git submodule deinit -f $m
-  git rm -r -f $m
+  bitbake-layers remove-layer "$1"
+  git submodule deinit -f "$m"
+  git rm -r -f "$m"
   echo "please commit with - git add conf/bblayers.conf && git commit -s -m'Added module $n'"
-  rm -rf .git/modules/$m
+  rm -rf ".git/modules/$m"
   #rm -rf $m
 }
 
 yoe_console() {
   # requires serial->usb device be mapped to /dev/ttyUSB_<machine name>
   # see http://bec-systems.com/site/1004/perisistent-device-names-usb-serial-ports
-  screen /dev/ttyUSB_${MACHINE} 115200
+  screen "/dev/ttyUSB_${MACHINE}" 115200
 }
 
 yoe_build_all() {
@@ -425,7 +432,7 @@ yoe_build_all() {
 }
 
 yoe_clean_sstate() {
-  $OE_BASE/sources/openembedded-core/scripts/sstate-cache-management.sh -d -y --cache-dir=$OE_BASE/build/sstate-cache
+  "$OE_BASE/sources/openembedded-core/scripts/sstate-cache-management.sh" -d -y --cache-dir="$OE_BASE/build/sstate-cache"
 }
 
 # Docker integration
@@ -491,43 +498,43 @@ dkr() {
   fi
 
   if [ -n "$SSH_AUTH_SOCK" ]; then
-    SSH_AUTH_DIR=$(readlink -f $SSH_AUTH_SOCK)
+    SSH_AUTH_DIR=$(readlink -f "$SSH_AUTH_SOCK")
   fi
 
   docker run --rm -i ${PSEUDOTTY} --log-driver=none -a stdin -a stdout -a stderr \
-    -v $(pwd):$(pwd) \
+    -v "$(pwd):$(pwd)" \
     -v ~/.ssh:/home/build/.ssh \
     -v ~/.gitconfig:/home/build/.gitconfig \
-    $MAP_DL_DIR \
-    $MAP_SSTATE_DIR \
-    $MAP_TMPDIR \
-    -v $SSH_AUTH_DIR:/ssh-agent \
+    "$MAP_DL_DIR" \
+    "$MAP_SSTATE_DIR" \
+    "$MAP_TMPDIR" \
+    -v "$SSH_AUTH_DIR:/ssh-agent" \
     -e SSH_AUTH_SOCK=/ssh-agent \
-    -e MACHINE=$MACHINE \
-    --user $(id -u):$(id -g) \
+    -e MACHINE="$MACHINE" \
+    --user "$(id -u):$(id -g)" \
     ${DOCKER_REPO} /bin/bash -c "cd $(pwd) && . envsetup.sh && $CMD $2 $3 $4 $5 $6 $7 $8"
 }
 
 bitbake() {
   ulimit -n 4096
   if [ -z $DOCKER_REPO ] || [ "$DOCKER_REPO" = "none" ]; then
-    ${OE_BASE}/sources/bitbake/bin/bitbake $@
+    "${OE_BASE}/sources/bitbake/bin/bitbake" "$@"
   else
-    dkr "${OE_BASE}/sources/bitbake/bin/bitbake $@"
+    dkr "${OE_BASE}/sources/bitbake/bin/bitbake" "$@"
   fi
 }
 
 devtool() {
   ulimit -n 4096
   if [ -z $DOCKER_REPO ] || [ "$DOCKER_REPO" = "none" ]; then
-    ${OE_BASE}/sources/openembedded-core/scripts/devtool $@
+    "${OE_BASE}/sources/openembedded-core/scripts/devtool" "$@"
   else
-    dkr "${OE_BASE}/sources/openembedded-core/scripts/devtool $@"
+    dkr "${OE_BASE}/sources/openembedded-core/scripts/devtool" "$@"
   fi
 }
 
 yoe_get_image_version() {
-  echo $(read_var_from_conf 'IMG_VERSION')
+  read_var_from_conf 'IMG_VERSION'
 }
 
 ###############################################################################
@@ -551,25 +558,24 @@ yoe_install_image() {
   IMAGE_NAME=$2
   yoe_check_install_dependencies || return 1
 
-  if [ ! $DRIVE ] || [ ! $IMAGE_NAME ]; then
+  if [ ! "$DRIVE" ] || [ ! "$IMAGE_NAME" ]; then
     echo "Usage: yoe_install_image /dev/sdX image_name"
     echo "WARNING!!!, make sure you specify your SD card and not a workstation disk"
     echo
     return 1
   fi
   WICIMG="$IMAGE"
-  if [ -z $WICIMG ]; then
+  if [ -z "$WICIMG" ]; then
     WICIMG=${OE_BASE}/build/tmp/deploy/images/${MACHINE}/${IMAGE_NAME}-${MACHINE}.wic.xz
   fi
-  if [ ! -e $WICIMG ]; then
+  if [ ! -e "$WICIMG" ]; then
     echo "$WICIMG does not exist, please build the image first"
     echo
     unset WICIMG
     return 1
   fi
-  bmaptool copy ${WICIMG} ${DRIVE}
-  if [ $? != 0 ]; then
-    echo "Please make sure\n"
+  if ! bmaptool copy "${WICIMG}" "${DRIVE}"; then
+    echo "Please make sure"
     echo "1. disk is inserted and discovered as ${DRIVE}"
     echo "2. run 'sudo chmod 666 ${DRIVE}'"
     echo "3. re-run yoe_install_image command"
